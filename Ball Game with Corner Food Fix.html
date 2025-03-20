@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ball Game with Corner Food Fix</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <audio id="backgroundMusic" loop>
+        <source src="scr\background-music.mp3" type="audio/mpeg">
+        Your browser does not support the audio element.
+    </audio>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const backgroundMusic = document.getElementById('backgroundMusic');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // 画布偏移量（用于实现画布移动）
+        let offsetX = 0;
+        let offsetY = 0;
+
+        // 玩家球
+        const player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 20,
+            color: 'blue',
+            baseSpeed: 5, // 基础速度
+            dx: 0, // 水平速度
+            dy: 0  // 垂直速度
+        };
+
+        // 食物球
+        const foods = [];
+        const minFoodCount = 200; // 最小食物数量
+        const maxFoodRadius = 20; // 最大食物球半径
+        const foodSpawnInterval = 500; // 食物生成间隔（毫秒）
+
+        // 作弊模式
+        let cheatMode = false;
+        const cheatCode = ['KeyX', 'KeyI', 'KeyA', 'KeyO', 'KeyZ', 'KeyH', 'KeyE']; // 作弊码
+        let cheatCodeIndex = 0; // 当前匹配的按键索引
+
+        // 生成随机颜色
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        // 初始化食物
+        function generateFood() {
+            let x, y;
+            let isValidPosition = false;
+
+            // 确保食物球不在玩家球附近生成
+            while (!isValidPosition) {
+                x = Math.random() * canvas.width; // 在画布范围内生成
+                y = Math.random() * canvas.height;
+
+                // 检查食物球是否离玩家球太近
+                const distance = Math.sqrt((x - player.x) ** 2 + (y - player.y) ** 2);
+                if (distance > player.radius + 50) { // 至少距离玩家球 50 像素
+                    isValidPosition = true;
+                }
+            }
+
+            const radius = Math.random() < 0.1 ? Math.floor(Math.random() * maxFoodRadius) + 10 : 5; // 10% 的概率生成大食物球
+            foods.push({
+                x: x,
+                y: y,
+                radius: radius,
+                color: getRandomColor() // 随机颜色
+            });
+        }
+
+        // 初始化多个食物球
+        for (let i = 0; i < minFoodCount; i++) {
+            generateFood();
+        }
+
+        // 定期生成食物球
+        setInterval(() => {
+            if (foods.length < minFoodCount) {
+                generateFood();
+            }
+        }, foodSpawnInterval);
+
+        // 绘制网格背景
+        function drawBackground() {
+            const gridSize = 50; // 网格大小
+            ctx.strokeStyle = '#333'; // 网格颜色（深色）
+            ctx.lineWidth = 1;
+
+            // 计算起始点
+            const startX = Math.floor(offsetX / gridSize) * gridSize;
+            const startY = Math.floor(offsetY / gridSize) * gridSize;
+
+            // 绘制网格
+            for (let x = startX; x < startX + canvas.width + gridSize; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x - offsetX, 0);
+                ctx.lineTo(x - offsetX, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = startY; y < startY + canvas.height + gridSize; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y - offsetY);
+                ctx.lineTo(canvas.width, y - offsetY);
+                ctx.stroke();
+            }
+        }
+
+        // 绘制玩家球
+        function drawPlayer() {
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+            ctx.fillStyle = player.color;
+            ctx.fill();
+            ctx.closePath();
+
+            // 显示玩家球的大小
+            ctx.fillStyle = 'white';
+            ctx.font = '20px Arial';
+            ctx.fillText(`Size: ${player.radius}`, player.x - 30, player.y + player.radius + 30);
+
+            // 如果作弊模式激活，显示提示
+            if (cheatMode) {
+                ctx.fillStyle = 'red';
+                ctx.font = '30px Arial';
+                ctx.fillText('Cheat Mode Activated!', canvas.width / 2 - 150, 50);
+            }
+        }
+
+        // 绘制食物球
+        function drawFoods() {
+            foods.forEach(food => {
+                ctx.beginPath();
+                ctx.arc(food.x - offsetX, food.y - offsetY, food.radius, 0, Math.PI * 2);
+                ctx.fillStyle = food.color;
+                ctx.fill();
+                ctx.closePath();
+            });
+        }
+
+        // 检测玩家球和食物球的碰撞
+        function checkCollision() {
+            foods.forEach((food, index) => {
+                const distance = Math.sqrt(
+                    (player.x - (food.x - offsetX)) ** 2 + (player.y - (food.y - offsetY)) ** 2
+                );
+                if (distance < player.radius) {
+                    // 玩家球吃掉食物球
+                    player.radius += Math.floor(food.radius * 0.2); // 玩家球变大，确保为整数
+                    foods.splice(index, 1); // 移除被吃掉的食物球
+                }
+            });
+        }
+
+        // 更新游戏状态
+        function update() {
+            // 根据玩家球的大小调整速度（越大越慢）
+            const speed = cheatMode ? player.baseSpeed : player.baseSpeed / (player.radius / 20); // 作弊模式下速度不变
+
+            // 移动玩家球
+            player.x += player.dx * speed;
+            player.y += player.dy * speed;
+
+            // 更新画布偏移量（使画布移动速度与玩家球一致）
+            offsetX += player.dx * speed;
+            offsetY += player.dy * speed;
+
+            // 边界检测，防止玩家球移出画布
+            if (player.x - player.radius < 0) {
+                player.x = player.radius;
+                offsetX = player.x - canvas.width / 2;
+            }
+            if (player.x + player.radius > canvas.width) {
+                player.x = canvas.width - player.radius;
+                offsetX = player.x - canvas.width / 2;
+            }
+            if (player.y - player.radius < 0) {
+                player.y = player.radius;
+                offsetY = player.y - canvas.height / 2;
+            }
+            if (player.y + player.radius > canvas.height) {
+                player.y = canvas.height - player.radius;
+                offsetY = player.y - canvas.height / 2;
+            }
+
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制背景颜色
+            ctx.fillStyle = '#1a1a1a'; // 深色背景
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // 绘制网格背景
+            drawBackground();
+
+            // 绘制玩家球和食物球
+            drawPlayer();
+            drawFoods();
+
+            // 检测碰撞
+            checkCollision();
+        }
+
+        // 键盘事件处理
+        const keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false,
+            KeyW: false, // W 键
+            KeyA: false, // A 键
+            KeyS: false, // S 键
+            KeyD: false  // D 键
+        };
+
+        window.addEventListener('keydown', (event) => {
+            if (keys.hasOwnProperty(event.code)) {
+                keys[event.code] = true;
+            }
+
+            // 在用户按下任意键时播放音乐
+            if (backgroundMusic.paused) {
+                backgroundMusic.play();
+            }
+
+            // 检测作弊码
+            if (event.code === cheatCode[cheatCodeIndex]) {
+                cheatCodeIndex++;
+                if (cheatCodeIndex === cheatCode.length) {
+                    cheatMode = true; // 激活作弊模式
+                    cheatCodeIndex = 0; // 重置索引
+                }
+            } else {
+                cheatCodeIndex = 0; // 按键错误，重置索引
+            }
+        });
+
+        window.addEventListener('keyup', (event) => {
+            if (keys.hasOwnProperty(event.code)) {
+                keys[event.code] = false;
+            }
+        });
+
+        // 根据按键状态更新玩家球的速度
+        function handleInput() {
+            player.dx = 0;
+            player.dy = 0;
+
+            // 方向键控制
+            if (keys.ArrowUp || keys.KeyW) player.dy = -1;    // 上或 W
+            if (keys.ArrowDown || keys.KeyS) player.dy = 1;    // 下或 S
+            if (keys.ArrowLeft || keys.KeyA) player.dx = -1;   // 左或 A
+            if (keys.ArrowRight || keys.KeyD) player.dx = 1;   // 右或 D
+        }
+
+        // 游戏主循环
+        function gameLoop() {
+            handleInput(); // 处理输入
+            update();    // 更新游戏状态
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>
